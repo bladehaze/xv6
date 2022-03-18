@@ -34,6 +34,7 @@
         "streambuf": "c",
         "system_error": "c",
         "riscv.h": "c",
-        "user.h": "c"
+        "user.h": "c",
+        "defs.h": "c"
     }
 }
