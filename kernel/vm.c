@@ -97,6 +97,20 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
   return &pagetable[PX(0, va)];
 }
 
+int pgaccess_help(pagetable_t pagetable, uint64 va, int n, uint64 bitmask) 
+{
+  uint32 result = 0;
+  // Kernel space page table is used.
+  // Why it is i > 0?
+  for(int i = n - 1; i > 0; --i) {
+    pte_t *pte = walk(pagetable, va + PGSIZE * i, 0);
+    if ((*pte & (PTE_V | PTE_A)) == (PTE_A | PTE_V)) {
+      result |= (1 << i);
+    }
+  }
+  return copyout(pagetable, bitmask, (char*)(&result), sizeof(uint32));
+}
+
 // Look up a virtual address, return the physical address,
 // or 0 if not mapped.
 // Can only be used to look up user pages.

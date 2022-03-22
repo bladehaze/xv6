@@ -35,6 +35,9 @@
         "system_error": "c",
         "riscv.h": "c",
         "user.h": "c",
-        "defs.h": "c"
+        "defs.h": "c",
+        "memlayout.h": "c",
+        "proc.h": "c",
+        "date.h": "c"
     }
 }
