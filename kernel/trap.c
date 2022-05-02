@@ -77,8 +77,15 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2) {
+    if (p->ticks > 0 && --(p->tickremain) <= 0) {
+      p->tickremain = p->ticks;
+      // call handler in kernel space??
+      p->handler();
+    }
+    // printf("here, %d, %d", p->ticks, p->tickremain);
     yield();
+  }
 
   usertrapret();
 }
