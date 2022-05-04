@@ -29,6 +29,20 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+
+void handle_timer(struct proc *p) {
+    if(p->running) return;
+    if (p->ticks == 0) return;
+    if (p->tickremain > 0) {
+      --p->tickremain;
+    }
+    if (p->tickremain == 0) {
+      p->saved = *p->trapframe;
+      p->trapframe->epc = (uint64)p->handler;
+      p->running = 1;
+    }
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -78,12 +92,7 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2) {
-    if (p->ticks > 0 && --(p->tickremain) <= 0) {
-      p->tickremain = p->ticks;
-      // call handler in kernel space??
-      p->handler();
-    }
-    // printf("here, %d, %d", p->ticks, p->tickremain);
+    handle_timer(p);
     yield();
   }
 

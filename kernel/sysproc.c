@@ -104,13 +104,26 @@ sys_sigalarm(void) {
   int ticks;
   if(argint(0, &ticks) < 0) return -1;
   if(argaddr(1, &handler) < 0) return -1;
-  myproc() ->handler = (void(*)())handler;
+  if(ticks == 0) {
+    myproc()->handler = 0;
+    myproc()->ticks = 0;
+    myproc()->running = 0;
+    return 0;
+  }
+  myproc()->handler = handler;
   myproc() ->ticks = ticks;
-
+  myproc()->tickremain = ticks;
   return 0;
 }
 
 uint64
 sys_sigreturn(void) {
+
+  struct proc *p = myproc();
+  p->tickremain = p->ticks;
+  // *myproc()->trapframe = *myproc()->copy_trapframe;
+  *myproc()->trapframe = myproc()->saved;
+  myproc()->running = 0;
+  
   return 0;
 }

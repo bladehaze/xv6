@@ -122,6 +122,7 @@ found:
   p->ticks = -1;
   p->handler = 0;
   p->tickremain = -1;
+  p->running = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
