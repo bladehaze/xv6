@@ -108,11 +108,13 @@ sys_sigalarm(void) {
     myproc()->handler = 0;
     myproc()->ticks = 0;
     myproc()->running = 0;
+    myproc()->tickremain = ticks;
     return 0;
   }
   myproc()->handler = handler;
-  myproc() ->ticks = ticks;
+  myproc()->ticks = ticks;
   myproc()->tickremain = ticks;
+  myproc()->running = 0;
   return 0;
 }
 
