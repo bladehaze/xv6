@@ -29,6 +29,32 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+// Handled page_fault. 
+int alloc_pa(uint64 va) {
+  char *mem;
+  uint64 pa;
+
+  // Align virtual address first.
+  va = PGROUNDDOWN(va);
+  struct proc *p = myproc();
+  if((pa = walkaddr(p->pagetable, va)) == 0)
+    panic("uvmcopy: pte should exist");
+  if((mem = kalloc()) == 0) {
+    // Don't need to clean up.
+    // in vm.c, this needs clean up because it allocate multiple pages.
+    return -1;
+  }
+  memmove(mem, (char*)pa, PGSIZE);
+  // unmmap and modify reference count.
+  uvmunmap(p->pagetable, va, 1, 1);
+  // replace pagetable entry by the new physical memory.
+  if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+    kfree(mem);
+    return -1;
+  }
+  return 0;
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -65,6 +91,14 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if (r_scause() == 13 || r_scause() == 15) {
+    // page fault
+    // virtual address.
+    uint64 va = r_stval();
+    int ret = alloc_pa(va);
+    if (ret != 0) {
+      exit(ret);
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

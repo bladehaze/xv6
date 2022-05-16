@@ -13,6 +13,7 @@ void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
+char reference_count[PHYSTOP / PGSIZE];
 
 struct run {
   struct run *next;
@@ -23,12 +24,26 @@ struct {
   struct run *freelist;
 } kmem;
 
+int increment_ref_count(void *pa){
+  uint64 p = PGROUNDUP((uint64)pa);
+  return ++reference_count[p / PGSIZE];
+}
+
+int decrease_ref_count(void *pa){
+  uint64 p = PGROUNDUP((uint64)pa);
+  return --reference_count[p / PGSIZE];
+}
+
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
+  for(uint64 p = PGROUNDUP((uint64)end); p + PGSIZE <= PHYSTOP; p += PGSIZE) {
+    reference_count[p / PGSIZE] = 0;
+  }
 }
+
 
 void
 freerange(void *pa_start, void *pa_end)
