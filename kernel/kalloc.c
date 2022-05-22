@@ -93,5 +93,6 @@ kalloc(void)
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
+  reference_count[(uint64)r / PGSIZE] = 0;
   return (void*)r;
 }

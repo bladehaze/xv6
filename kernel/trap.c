@@ -37,16 +37,17 @@ int alloc_pa(uint64 va) {
   // Align virtual address first.
   va = PGROUNDDOWN(va);
   struct proc *p = myproc();
-  if((pa = walkaddr(p->pagetable, va)) == 0)
-    panic("uvmcopy: pte should exist");
-  if((mem = kalloc()) == 0) {
+  pa = walkaddr(p->pagetable, va);
+  if ((mem = kalloc()) == 0) {
     // Don't need to clean up.
     // in vm.c, this needs clean up because it allocate multiple pages.
     return -1;
   }
-  memmove(mem, (char*)pa, PGSIZE);
-  // unmmap and modify reference count.
-  uvmunmap(p->pagetable, va, 1, 1);
+  if (pa != 0) {
+    memmove(mem, (char*)pa, PGSIZE);
+    // unmmap and modify reference count.
+    uvmunmap(p->pagetable, va, /*npages=*/ 1, /*do_free=*/ 1);
+  }
   // replace pagetable entry by the new physical memory.
   if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
     kfree(mem);

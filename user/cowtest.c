@@ -18,7 +18,7 @@ simpletest()
   // printf("simple: %d", sz);
   printf("simple: ");
   
-  char *p = sbrk(16);
+  char *p = sbrk(sz);
   printf("cowtest %p \n", p);
   if(p == (char*)0xffffffffffffffffL){
     printf("sbrk(%d) failed\n", sz);
