@@ -97,6 +97,17 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
   return &pagetable[PX(0, va)];
 }
 
+pte_t *
+walkpte(pagetable_t pagetable, uint64 va)
+{
+
+  if(va >= MAXVA)
+    return 0;
+
+  return walk(pagetable, va, 0);
+}
+
+
 // Look up a virtual address, return the physical address,
 // or 0 if not mapped.
 // Can only be used to look up user pages.
@@ -355,14 +366,14 @@ uvmclear(pagetable_t pagetable, uint64 va)
 
 uint64 alloc_pa_copyout(pagetable_t pagetable, uint64 va0) {
     char *mem;
-    pte_t* pte = walk(pagetable, va0, /*allocate=*/0);
+    pte_t* pte = walkpte(pagetable, va0);
     if (pte == 0) {
-      panic("shouldn't happen");
+      return 0;
     }
     int flags = PTE_FLAGS(*pte);
     if (flags & PTE_COW) { // this is cow page
       if( (mem = kalloc()) == 0) {
-        panic("no physical memory");
+        return 0;
       }
 
       // physical memory

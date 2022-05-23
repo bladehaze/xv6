@@ -6,6 +6,7 @@
 #include "kernel/memlayout.h"
 #include "user/user.h"
 
+#define MAXVA (1L << (9 + 9 + 9 + 12 - 1))
 // allocate more than half of physical memory,
 // then fork. this will fail in the default
 // kernel, which does not support copy-on-write.

@@ -31,6 +31,7 @@ trapinithart(void)
 
 // Handled page_fault. 
 int alloc_pa(uint64 va) {
+
   char *mem;
   uint64 pa;
   int flags;
@@ -38,9 +39,16 @@ int alloc_pa(uint64 va) {
   // Align virtual address first.
   va = PGROUNDDOWN(va);
   struct proc *p = myproc();
-  pte_t* pte = walk(p->pagetable, va, 0);
+  pte_t* pte = walkpte(p->pagetable, va);
+  if (pte == 0) {
+    return -1;
+  }
   pa = PTE2PA(*pte);
   flags = PTE_FLAGS(*pte);
+  if (!(flags & PTE_COW)) {
+    printf("note COW, skip");
+    return -1;
+  }
   if ((mem = kalloc()) == 0) {
     // Don't need to clean up.
     // in vm.c, this needs clean up because it allocate multiple pages.
@@ -102,7 +110,6 @@ usertrap(void)
     int ret = alloc_pa(va);
     if (ret != 0) {
       p->killed = 1;
-      exit(ret);
     }
   } else if((which_dev = devintr()) != 0){
     // ok
