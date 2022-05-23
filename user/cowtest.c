@@ -129,6 +129,7 @@ char junk3[4096];
 void
 filetest()
 {
+  printf("file %d\n", getpid());
   printf("file: ");
   
   buf[0] = 99;

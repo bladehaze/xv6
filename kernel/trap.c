@@ -33,11 +33,14 @@ trapinithart(void)
 int alloc_pa(uint64 va) {
   char *mem;
   uint64 pa;
+  int flags;
 
   // Align virtual address first.
   va = PGROUNDDOWN(va);
   struct proc *p = myproc();
-  pa = walkaddr(p->pagetable, va);
+  pte_t* pte = walk(p->pagetable, va, 0);
+  pa = PTE2PA(*pte);
+  flags = PTE_FLAGS(*pte);
   if ((mem = kalloc()) == 0) {
     // Don't need to clean up.
     // in vm.c, this needs clean up because it allocate multiple pages.
@@ -49,7 +52,7 @@ int alloc_pa(uint64 va) {
     uvmunmap(p->pagetable, va, /*npages=*/ 1, /*do_free=*/ 1);
   }
   // replace pagetable entry by the new physical memory.
-  if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+  if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, (flags | PTE_W) & ~PTE_COW) != 0){
     kfree(mem);
     return -1;
   }
@@ -98,6 +101,7 @@ usertrap(void)
     uint64 va = r_stval();
     int ret = alloc_pa(va);
     if (ret != 0) {
+      p->killed = 1;
       exit(ret);
     }
   } else if((which_dev = devintr()) != 0){

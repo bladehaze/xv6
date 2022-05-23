@@ -317,9 +317,10 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     // Copy-on-write implementation.
     // Clear PTE_W for the parent process
     *pte &= ~PTE_W;
+    *pte |= PTE_COW;
     // Clear PTE_W for the child process
     flags &= ~PTE_W;
-    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags | PTE_COW) != 0){
       goto err;
     }
 
@@ -352,6 +353,39 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
+uint64 alloc_pa_copyout(pagetable_t pagetable, uint64 va0) {
+    char *mem;
+    pte_t* pte = walk(pagetable, va0, /*allocate=*/0);
+    if (pte == 0) {
+      panic("shouldn't happen");
+    }
+    int flags = PTE_FLAGS(*pte);
+    if (flags & PTE_COW) { // this is cow page
+      // printf("handle copy out\n");
+      // printf("%p\n", *pte & PTE_W);
+      if( (mem = kalloc()) == 0) {
+        panic("no physical memory");
+      }
+
+      // physical memory
+      uint64 pa = PTE2PA(*pte);
+      memmove(mem, (void*)pa, PGSIZE);
+      // printf("ummap \n");
+      uvmunmap(pagetable, va0, /*npages=*/ 1, /*do_free=*/ 1);
+      // printf("mmappages \n");
+      // Set write flags and clear cow flag.
+      flags = (flags | PTE_W) & ~PTE_COW;
+      if(mappages(pagetable, va0, PGSIZE, (uint64)mem, flags) != 0){
+        // printf("map page failed.");
+        kfree(mem);
+        return 0;
+      }
+      // printf("finished handling copy out\n");
+      return (uint64)mem;
+    }
+    return PTE2PA(*pte);
+}
+
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
@@ -360,9 +394,12 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
+  // printf("copy out\n");
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    pa0 = walkaddr(pagetable, va0);
+
+    // pa0 = walkaddr(pagetable, va0);
+    pa0 = alloc_pa_copyout(pagetable, va0);
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);
@@ -374,6 +411,8 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     src += n;
     dstva = va0 + PGSIZE;
   }
+
+  // printf("copy out done\n");
   return 0;
 }
 

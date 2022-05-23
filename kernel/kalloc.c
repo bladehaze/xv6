@@ -39,9 +39,6 @@ kinit()
 {
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
-  for(uint64 p = PGROUNDUP((uint64)end); p + PGSIZE <= PHYSTOP; p += PGSIZE) {
-    reference_count[p / PGSIZE] = 0;
-  }
 }
 
 
