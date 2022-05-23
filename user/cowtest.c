@@ -15,11 +15,9 @@ simpletest()
   uint64 phys_size = PHYSTOP - KERNBASE;
   int sz = (phys_size / 3) * 2;
 
-  // printf("simple: %d", sz);
   printf("simple: ");
   
   char *p = sbrk(sz);
-  printf("cowtest %p \n", p);
   if(p == (char*)0xffffffffffffffffL){
     printf("sbrk(%d) failed\n", sz);
     exit(-1);
@@ -129,7 +127,6 @@ char junk3[4096];
 void
 filetest()
 {
-  printf("file %d\n", getpid());
   printf("file: ");
   
   buf[0] = 99;
