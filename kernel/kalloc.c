@@ -25,13 +25,21 @@ struct {
 } kmem;
 
 int increment_ref_count(void *pa){
+
+  acquire(&kmem.lock);
   uint64 p = PGROUNDUP((uint64)pa);
-  return ++reference_count[p / PGSIZE];
+  int count =  ++reference_count[p / PGSIZE];
+  release(&kmem.lock);
+  return count;
 }
 
 int decrease_ref_count(void *pa){
+
+  acquire(&kmem.lock);
   uint64 p = PGROUNDUP((uint64)pa);
-  return --reference_count[p / PGSIZE];
+  int count = --reference_count[p / PGSIZE];
+  release(&kmem.lock);
+  return count;
 }
 
 void
@@ -84,12 +92,13 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
+  if(r) {
     kmem.freelist = r->next;
+    reference_count[(uint64)r / PGSIZE] = 0;
+  }
   release(&kmem.lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
-  reference_count[(uint64)r / PGSIZE] = 0;
   return (void*)r;
 }
