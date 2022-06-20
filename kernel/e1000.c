@@ -20,6 +20,7 @@ static struct mbuf *rx_mbufs[RX_RING_SIZE];
 static volatile uint32 *regs;
 
 struct spinlock e1000_lock;
+struct spinlock e1000_lock_recv;
 
 // called by pci_init().
 // xregs is the memory address at which the
@@ -30,6 +31,7 @@ e1000_init(uint32 *xregs)
   int i;
 
   initlock(&e1000_lock, "e1000");
+  initlock(&e1000_lock_recv, "e1000 recv");
 
   regs = xregs;
 
@@ -102,19 +104,77 @@ e1000_transmit(struct mbuf *m)
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after sending.
   //
-  
+  // printf("\nsending %p\n", m);
+  // lock
+  // printf("transmit acquire cpuid %d, lock address %p ", cpuid(), &e1000_lock);
+  acquire(&e1000_lock);
+  // get tail
+  int tail = regs[E1000_TDT];
+  int head = regs[E1000_TDH];
+
+  // printf("cpuid %d, tail %d, head %d\n", cpuid(), tail, head);
+  if (head == (tail + 1) % TX_RING_SIZE)
+  {
+    // sleep? on what? ignore for now.
+    // printf("head == tail + 1\n");
+    return -1;
+  }
+  if (!(tx_ring[tail].status & E1000_TXD_STAT_DD))
+  {
+    // printf("tail pointer not ready\n");
+    return -1;
+  }
+
+  if (tx_mbufs[tail])
+    mbuffree(tx_mbufs[tail]);
+  tx_mbufs[tail] = m;
+  tx_ring[tail].addr = (uint64)(m->head);
+  tx_ring[tail].length = (m->len);
+  tx_ring[tail].cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP;
+  regs[E1000_TDT] = (tail + 1) % TX_RING_SIZE;
+  release(&e1000_lock);
+  // printf("trasmit release cpuid %d, lock address %p.\n", cpuid(), &e1000_lock);
   return 0;
 }
 
 static void
 e1000_recv(void)
 {
-  //
-  // Your code here.
-  //
-  // Check for packets that have arrived from the e1000
-  // Create and deliver an mbuf for each packet (using net_rx()).
-  //
+  // The interrupte is called. We are in kernel threads.
+  // The previous state can be either user threads or kernel threads. The difference
+  // is that if you lock here previously in kernel threads, here the
+  // lock might still be hold by kernel, which will block the kernel threads.
+  // so if we block kernel threads twice, it would deadlock.
+  // printf("recv acquire cpuid %d, lock address %p ", cpuid(), &e1000_lock_recv);
+  acquire(&e1000_lock_recv);
+
+  int tail = regs[E1000_RDT];
+  int head = regs[E1000_RDH];
+
+  // printf("receiving tail %d, head %d\n", tail, head);
+  while (1)
+  {
+    tail = (tail + 1) % RX_RING_SIZE;
+    if (tail == head || !(rx_ring[tail].status & E1000_RXD_STAT_DD))
+    {
+      // printf("not ready receive \n");
+      break;
+    }
+    rx_mbufs[tail]->len = rx_ring[tail].length;
+    net_rx(rx_mbufs[tail]);
+    rx_mbufs[tail] = mbufalloc(0);
+    if (!rx_mbufs[tail])
+    {
+      panic("reciving E1000");
+    }
+    rx_ring[tail].addr = (uint64)rx_mbufs[tail]->head;
+    rx_ring[tail].status = 0;
+    regs[E1000_RDT] = tail;
+  }
+  release(&e1000_lock_recv);
+
+  // printf("recv release cpuid %d, lock address %p\n", cpuid(), &e1000_lock_recv);
+  // printf("\n done receiving \n");
 }
 
 void
@@ -124,6 +184,5 @@ e1000_intr(void)
   // without this the e1000 won't raise any
   // further interrupts.
   regs[E1000_ICR] = 0xffffffff;
-
   e1000_recv();
 }
