@@ -95,21 +95,16 @@ kalloc(void)
   r = kmem[id].freelist;
   if(r)
     kmem[id].freelist = r->next;
-  else {
-    // steal
-  }
   release(&kmem[id].lock);
   if(!r) {
     for(int i = (id + 1) % NCPU; i != id; i = (i + 1) % NCPU) {
-      char c = 0;
       acquire(&kmem[i].lock);
       r = kmem[i].freelist;
       if (r) {
         kmem[i].freelist = r->next;
-        c = 1;
       }
       release(&kmem[i].lock);
-      if (c) break;
+      if (r) break;
     }
   }
 
