@@ -27,6 +27,7 @@
 struct {
   struct spinlock lock;
   struct buf buf[NBUF];
+  struct buf head;
 } bufs;
 
 struct BCache {
@@ -38,14 +39,29 @@ struct BCache {
   struct buf head;
 } bcache[NBUCKET];
 
+char* bcache_names[] = {
+"bcache_a",
+"bcache_b",
+"bcache_c",
+"bcache_d",
+"bcache_e",
+"bcache_f",
+"bcache_g",
+"bcache_h",
+"bcache_i",
+"bcache_j",
+"bcache_k",
+"bcache_l",
+"bcache_m",
+};
+
 void
 binit(void)
 {
   struct buf *b;
 
   for(int i = 0; i < NBUCKET; ++i) {
-   initlock(&bcache[i].lock, "bcache0");
-   bcache[i].lock.name[6] = 'a' + i;
+   initlock(&bcache[i].lock, bcache_names[i]);
    bcache[i].head.prev = &(bcache[i].head);
    bcache[i].head.next = &(bcache[i].head);
   }
@@ -60,9 +76,17 @@ binit(void)
   //   bcache.head.next->prev = b;
   //   bcache.head.next = b;
   // }
-
+  // for(b = bufs.buf; b < bufs.buf+NBUF; b++){
+  //   initsleeplock(&b->lock, "bcache.buffer");
+  // }
+  bufs.head.prev = &bufs.head;
+  bufs.head.next = &bufs.head;
   for(b = bufs.buf; b < bufs.buf+NBUF; b++){
-    initsleeplock(&b->lock, "bcache.buffer");
+    b->next = bufs.head.next;
+    b->prev = &bufs.head;
+    initsleeplock(&b->lock, "buffer");
+    bufs.head.next->prev = b;
+    bufs.head.next = b;
   }
 }
 
@@ -98,12 +122,17 @@ bget(uint dev, uint blockno)
   // Not cached.
   // Recycle the least recently used (LRU) unused buffer.
   // for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
-  for(b=bufs.buf; b < bufs.buf + NBUF; ++b) {
+  // for(b=bufs.buf; b < bufs.buf + NBUF; ++b) {
+  for(b = bufs.head.prev; b != &bufs.head; b = b->prev){
     if(b->refcnt == 0) {
       b->dev = dev;
       b->blockno = blockno;
       b->valid = 0;
       b->refcnt = 1;
+
+      // Remove from general cache
+      b->next->prev = b->prev;
+      b->prev->next = b->next;
 
       // Add to bucket
       b->next = bcache[bucket].head.next;
@@ -167,6 +196,12 @@ brelse(struct buf *b)
     // b->prev = &bcache[bucket].head;
     // bcache[bucket].head.next->prev = b;
     // bcache[bucket].head.next = b;
+
+    // Return this to general cache pool.
+    b->next = bufs.head.next;
+    b->prev = &bufs.head;
+    bufs.head.next->prev = b;
+    bufs.head.next = b;
   }
   // __sync_synchronize();
   b->refcnt = refcnt;
