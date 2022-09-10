@@ -147,6 +147,7 @@ sys_link(void)
   ilock(dp);
   if(dp->dev != ip->dev || dirlink(dp, name, ip->inum) < 0){
     iunlockput(dp);
+    // Currently went here.
     goto bad;
   }
   iunlockput(dp);

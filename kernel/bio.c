@@ -62,12 +62,12 @@ binit(void)
   // }
 
   for(b = bufs.buf; b < bufs.buf+NBUF; b++){
-    initsleeplock(&b->lock, "buffer");
+    initsleeplock(&b->lock, "bcache.buffer");
   }
 }
 
 uint hash(uint blockno) {
-  return (blockno) % NBUCKET;
+  return (blockno >> 2) % NBUCKET;
 }
 
 // Look through buffer cache for block on device dev.
@@ -155,8 +155,11 @@ brelse(struct buf *b)
 
   uint bucket = hash(b->blockno);
   acquire(&bcache[bucket].lock);
+
+  acquire(&bufs.lock);
   uint refcnt = b->refcnt - 1;
   if (refcnt == 0) {
+
     // no one is waiting for it.
     b->next->prev = b->prev;
     b->prev->next = b->next;
@@ -165,9 +168,10 @@ brelse(struct buf *b)
     // bcache[bucket].head.next->prev = b;
     // bcache[bucket].head.next = b;
   }
-  __sync_synchronize();
+  // __sync_synchronize();
   b->refcnt = refcnt;
   
+  release(&bufs.lock);
   release(&bcache[bucket].lock);
 }
 
