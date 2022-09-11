@@ -65,6 +65,7 @@ binit(void)
    bcache[i].head.prev = &(bcache[i].head);
    bcache[i].head.next = &(bcache[i].head);
   }
+  initlock(&bufs.lock, "bcache.buffer");
 
   // Create linked list of buffers
   // bcache.head.prev = &bcache.head;
