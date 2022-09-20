@@ -117,8 +117,12 @@ sys_fstat(void)
 
 uint64
 sys_symlink(void) {
+  char name[DIRSIZ], new[MAXPATH], old[MAXPATH];
+  struct inode *dp, *ip;
 
-return 0;
+  if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
+    return -1;
+  return 0;
 }
 
 // Create the path new as a link to the same inode as old.
