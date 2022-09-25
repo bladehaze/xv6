@@ -115,16 +115,6 @@ sys_fstat(void)
   return filestat(f, st);
 }
 
-uint64
-sys_symlink(void) {
-  char name[DIRSIZ], new[MAXPATH], old[MAXPATH];
-  struct inode *dp, *ip;
-
-  if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
-    return -1;
-  return 0;
-}
-
 // Create the path new as a link to the same inode as old.
 uint64
 sys_link(void)
@@ -294,19 +284,56 @@ create(char *path, short type, short major, short minor)
 }
 
 uint64
+sys_symlink(void) {
+  char new[MAXPATH], old[MAXPATH];
+  struct inode *ip;
+
+  if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+  // Find parent directory's inode, name is the parent directory name
+  if((ip = create(new, T_SYMLINK, 0, 0)) == 0) {
+    end_op();
+    return -1;
+  }
+
+  ilock(ip);
+  // Write old (target) filename to inode's dp's data field.
+  writei(ip, 0, (uint64)old, 0, MAXPATH);
+  iunlockput(ip);
+  end_op();
+  return 0;
+}
+
+
+struct inode* next(struct inode* ip, int omode) {
+  char path[MAXPATH];
+  if (!ip || ip->type != T_SYMLINK || omode == O_NOFOLLOW) {
+    return ip;
+  }
+  ilock(ip);
+  readi(ip, 0, (uint64)path, 0, MAXPATH);
+  iunlockput(ip);
+  if((ip = namei(path)) == 0) {
+    return 0;
+  }
+  return ip;
+}
+
+uint64
 sys_open(void)
 {
   char path[MAXPATH];
   int fd, omode;
   struct file *f;
-  struct inode *ip;
+  struct inode *ip, *np;
   int n;
 
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
 
   begin_op();
-
   if(omode & O_CREATE){
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
@@ -315,6 +342,17 @@ sys_open(void)
     }
   } else {
     if((ip = namei(path)) == 0){
+      end_op();
+      return -1;
+    }
+    np = next(ip, omode);
+    while (ip != np) {
+      ip = next(ip, omode);
+      np = next(np, omode);
+      np = next(np, omode);
+    }
+    // Either linked file doesn't exist or there is a cycle.
+    if(ip == 0 || (omode != O_NOFOLLOW && ip->type == T_SYMLINK)) {
       end_op();
       return -1;
     }
