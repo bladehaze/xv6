@@ -252,7 +252,7 @@ create(char *path, short type, short major, short minor)
   if((ip = dirlookup(dp, name, 0)) != 0){
     iunlockput(dp);
     ilock(ip);
-    if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))
+    if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE || ip->type == T_SYMLINK))
       return ip;
     iunlockput(ip);
     return 0;
@@ -298,7 +298,6 @@ sys_symlink(void) {
     return -1;
   }
 
-  ilock(ip);
   // Write old (target) filename to inode's dp's data field.
   writei(ip, 0, (uint64)old, 0, MAXPATH);
   iunlockput(ip);
@@ -307,18 +306,50 @@ sys_symlink(void) {
 }
 
 
-struct inode* next(struct inode* ip, int omode) {
+struct inode* find_next(struct inode* ip) {
   char path[MAXPATH];
-  if (!ip || ip->type != T_SYMLINK || omode == O_NOFOLLOW) {
-    return ip;
-  }
   ilock(ip);
   readi(ip, 0, (uint64)path, 0, MAXPATH);
-  iunlockput(ip);
-  if((ip = namei(path)) == 0) {
+  iunlock(ip);
+  struct inode* next = namei(path);
+  if(next == 0) return 0;
+  int type = next->type;
+  if(!next->valid) { // here we need to load the item from disk if not already.
+    ilock(next);
+    type = next->type;
+    iunlock(next);
+  }
+  if(type != T_SYMLINK) {
+    iput(next);
     return 0;
   }
-  return ip;
+  return next;
+}
+
+struct inode* follow_and_replace(struct inode* ip) {
+  // This function will have the ownership of ip.
+  struct inode* np = find_next(ip);
+  if (np == 0) {
+    return ip;
+  }
+  while(np != ip) {
+    for(int i = 0; i < 2; ++i) {
+      struct inode* nnp = find_next(np);
+      if(nnp == 0) { // linked file non-exist or not a linkfile.
+        iput(ip);
+        return np;
+      }
+      iput(np);
+      np = nnp;
+    }
+    // Update ip
+    struct inode* nip = find_next(ip);
+    iput(ip); // we don't need ip now. and ip cannot equal to nip.
+    ip = nip;
+  }
+  iput(ip);
+  iput(np);
+  return 0;
 }
 
 uint64
@@ -327,55 +358,58 @@ sys_open(void)
   char path[MAXPATH];
   int fd, omode;
   struct file *f;
-  struct inode *ip, *np;
+  struct inode *ip;
   int n;
 
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
     return -1;
 
   begin_op();
+  #define RETURN_ERROR end_op(); return -1;
+
+  if(!(omode & O_NOFOLLOW)) {
+    if((ip = namei(path)) != 0) {
+      // There is some file associated with the path.
+      if (ip->type == T_SYMLINK) {
+        ip = follow_and_replace(ip);
+        if (ip == 0){
+          RETURN_ERROR
+        }
+        // now copy name to path and discard ip.
+        ilock(ip);
+        readi(ip, 0, (uint64)path, 0, MAXPATH);
+        iunlock(ip);
+      }
+      iput(ip);
+    }
+  }
+
   if(omode & O_CREATE){
     ip = create(path, T_FILE, 0, 0);
     if(ip == 0){
-      end_op();
-      return -1;
+      RETURN_ERROR
     }
   } else {
     if((ip = namei(path)) == 0){
-      end_op();
-      return -1;
-    }
-    np = next(ip, omode);
-    while (ip != np) {
-      ip = next(ip, omode);
-      np = next(np, omode);
-      np = next(np, omode);
-    }
-    // Either linked file doesn't exist or there is a cycle.
-    if(ip == 0 || (omode != O_NOFOLLOW && ip->type == T_SYMLINK)) {
-      end_op();
-      return -1;
+      RETURN_ERROR
     }
     ilock(ip);
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
-      end_op();
-      return -1;
+      RETURN_ERROR
     }
   }
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
     iunlockput(ip);
-    end_op();
-    return -1;
+    RETURN_ERROR
   }
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
       fileclose(f);
     iunlockput(ip);
-    end_op();
-    return -1;
+    RETURN_ERROR
   }
 
   if(ip->type == T_DEVICE){

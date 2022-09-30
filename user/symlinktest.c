@@ -109,6 +109,12 @@ testsymlink(void)
   r = symlink("/testsymlink/4", "/testsymlink/3");
   if(r) fail("Failed to link 3->4");
 
+  fd1 = open("/testsymlink/1", O_RDWR);
+  fd1 = open("/testsymlink/2", O_RDWR);
+  fd1 = open("/testsymlink/3", O_RDWR);
+  fd1 = open("/testsymlink/4", O_RDWR);
+  return;
+
   close(fd1);
   close(fd2);
 
