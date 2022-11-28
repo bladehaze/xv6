@@ -164,11 +164,11 @@ uint16 find_next(pagetable_t pagetable, uint64 va, int is_empty) {
   pte_t *pte;
   a = PGROUNDDOWN(va);
   for(;a < MAXVA; a += PGSIZE) {
-    pte = walk(pagetable, a, 0);
-    if (is_empty && pte == 0) {
+    pte = walk(pagetable, a, 1);
+    if (is_empty && !(*pte & PTE_V)) {
       return a;
     }
-    if (!is_empty && pte != 0) {
+    if (!is_empty && (*pte & PTE_V)) {
       return a;
     }
   }
@@ -178,10 +178,12 @@ uint16 find_next(pagetable_t pagetable, uint64 va, int is_empty) {
 int have_enough_space(pagetable_t pagetable, uint64 va, int sz) {
 
   uint64 a, last;
+  pte_t *pte;
   a = PGROUNDDOWN(va);
   last = PGROUNDDOWN(va + sz - 1);
   for(;a <= last && a < MAXVA; a += PGSIZE) {
-    if(walk(pagetable, a, 0) != 0) {
+    pte = walk(pagetable, a, 1);
+    if(*pte & PTE_V) {
       return 0;
     }
   }
@@ -215,11 +217,9 @@ mmap_allocate(pagetable_t pagetable, uint64 va, int sz) {
   result = a;
   for(;a <= last; a += PGSIZE) {
     pte = walk(pagetable, a, 1);
-    *pte |= PTE_W | PTE_R;
- // this should be user accessible.
-    *pte |= PTE_U;
- // Make sure it will trap.
-    *pte &= ~PTE_V;
+    // *pte |= PTE_W | PTE_R | PTE_V | PTE_U;
+    // Cannot read-write till we map the file.
+    *pte |= PTE_V | PTE_U | PTE_MMAP;
   }
 
   return result;
