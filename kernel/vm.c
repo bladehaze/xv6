@@ -225,6 +225,21 @@ mmap_allocate(pagetable_t pagetable, uint64 va, int sz) {
   return result;
 }
 
+// Allocate a page for this va.
+int allocate_for_page_fault(pagetable_t pagetable, uint64 va, int perm)
+{
+  uint64 a;
+  pte_t *pte;
+  a = PGROUNDDOWN(va);
+  pte = walk(pagetable, va, 0);
+  if (pte == 0) {
+    panic("Unallocated PTE.");
+  }
+  // TODO Check if pte has appropriate flags, PTE_MMAP or PTE_COW
+  uint64 pa = (uint64)kalloc();
+  return mappages(pagetable, a, PGSIZE, pa, perm | PTE_FLAGS(*pte));
+}
+
 
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.

@@ -541,11 +541,7 @@ uint64 sys_mmap(void)
   // now need to find virtual address.
   vma_ptr->address = mmap_allocate(p->pagetable, addr, length);
   
-  return 0;
-// error:
-//   vma_ptr->valid = 0;
-//   fileclose(fd);
-//   return -1;
+  return vma_ptr->address;
 }
 
 uint64 sys_munmap(void)

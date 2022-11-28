@@ -171,6 +171,7 @@ int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 uint64          mmap_allocate(pagetable_t pagetable, uint64 va, int sz);
+int allocate_for_page_fault(pagetable_t pagetable, uint64 va, int perm);
 
 // plic.c
 void            plicinit(void);

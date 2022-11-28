@@ -168,6 +168,26 @@ clockintr()
   release(&tickslock);
 }
 
+int handle_page_fault(uint64 va) {
+  // find the entry and see if it is PTE_MMAP
+  // Find vma entry for this va
+  struct proc* p = myproc();
+  struct vma* vma_ptr = 0;
+  for(int i= 0; i < NUM_VMAS; ++i) {
+    if(!p->vmas[i].valid) continue;
+    if(p->vmas[i].address <= va && p->vmas[i].address + p->vmas[i].sz > va) {
+      vma_ptr = &p->vmas[i];
+    }
+  }
+  // the prot << 1 bit translate PROTO to PTE
+  if(allocate_for_page_fault(p->pagetable, va, vma_ptr->prot << 1) == 0) {
+    // not successful for any reason.
+    return 0;
+  }
+  // read file and and map to va.
+  return 0;
+}
+
 // check if it's an external interrupt or software interrupt,
 // and handle it.
 // returns 2 if timer interrupt,
@@ -213,6 +233,10 @@ devintr()
     w_sip(r_sip() & ~2);
 
     return 2;
+  } else if (scause == 13 || scause == 15) {
+    // allocate a physical memory and read file to it.
+    uint64 va = r_stval();
+    return handle_page_fault(va);
   } else {
     return 0;
   }
