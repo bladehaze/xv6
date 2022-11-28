@@ -159,6 +159,73 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   return 0;
 }
 
+uint16 find_next(pagetable_t pagetable, uint64 va, int is_empty) {
+  uint64 a;
+  pte_t *pte;
+  a = PGROUNDDOWN(va);
+  for(;a < MAXVA; a += PGSIZE) {
+    pte = walk(pagetable, a, 0);
+    if (is_empty && pte == 0) {
+      return a;
+    }
+    if (!is_empty && pte != 0) {
+      return a;
+    }
+  }
+  panic("cannot mmap");
+}
+
+int have_enough_space(pagetable_t pagetable, uint64 va, int sz) {
+
+  uint64 a, last;
+  a = PGROUNDDOWN(va);
+  last = PGROUNDDOWN(va + sz - 1);
+  for(;a <= last && a < MAXVA; a += PGSIZE) {
+    if(walk(pagetable, a, 0) != 0) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+// create pte entries cover a range of [va, va+sz]
+// if va == 0, then an empty range in virtual address
+// space is allocated and returned.
+uint64
+mmap_allocate(pagetable_t pagetable, uint64 va, int sz) {
+  uint64 a, last;
+  uint64 result; 
+  pte_t *pte;
+  a = PGROUNDDOWN(va);
+  last = PGROUNDDOWN(va + sz - 1);
+  for(;;) {
+    a = find_next(pagetable, a, /*isempty=*/1);
+    if (a == MAXVA) {
+      panic("Can not find empty space.");
+    }
+    if(have_enough_space(pagetable, a, sz)) {
+      // address starting at a has enough space.
+      break;
+    } else {
+      a = find_next(pagetable, a, /*isempty=*/0);
+    }
+  }
+  // a now is a valid address.
+  // we need to map
+  result = a;
+  for(;a <= last; a += PGSIZE) {
+    pte = walk(pagetable, a, 1);
+    *pte |= PTE_W | PTE_R;
+ // this should be user accessible.
+    *pte |= PTE_U;
+ // Make sure it will trap.
+    *pte &= ~PTE_V;
+  }
+
+  return result;
+}
+
+
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.

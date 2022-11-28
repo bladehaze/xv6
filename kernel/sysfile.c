@@ -492,7 +492,8 @@ uint64 sys_mmap(void)
 {
   uint64 addr;
   int length;
-  int prot, flags, fd, offset;
+  int prot, flags, offset;
+  struct file *fd;
 
   if(argaddr(0, &addr) < 0)
     return -1;
@@ -502,13 +503,49 @@ uint64 sys_mmap(void)
     return -1;
   if(argint(3, &flags) < 0)
     return -1;
-  if(argint(4, &fd) < 0)
+  if(argfd(4, 0, &fd) < 0)
     return -1;
   if(argint(5, &offset) < 0)
     return -1;
-  
 
+  struct proc *p = myproc();
+  struct vma *vma_ptr = 0;
+  
+  for(int i = 0; i < NUM_VMAS; ++i) {
+    if(!p->vmas[i].valid) {
+      // Find empty space in virtual address space.
+      vma_ptr = &p->vmas[i];
+      break;
+    }
+  }
+  if(vma_ptr == 0) {
+    // all vmas occupied.
+    return -1;
+  }
+  // Now find a virtual address in user.
+  // ma_allocate(address, pagetable, sz)
+
+// struct vma {
+//   struct file *mfile; // mapped file
+//   uint64 address;     // virtual address
+//   uint64 sz;          // size of the vma
+//   int proto;          // permission
+//   char valid;         // assigned or not
+// };
+
+  fd = filedup(fd);
+  vma_ptr->mfile = fd;
+  vma_ptr->sz = length;
+  vma_ptr->prot = prot;
+  vma_ptr->valid = 1;
+  // now need to find virtual address.
+  vma_ptr->address = mmap_allocate(p->pagetable, addr, length);
+  
   return 0;
+// error:
+//   vma_ptr->valid = 0;
+//   fileclose(fd);
+//   return -1;
 }
 
 uint64 sys_munmap(void)

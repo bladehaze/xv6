@@ -141,6 +141,8 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  //initialize to be invalid.
+  memset(&p->vmas, 0, sizeof(p->vmas));
   return p;
 }
 
@@ -164,6 +166,11 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  for(int i = 0; i < NUM_VMAS; ++i) {
+    if(p->vmas[i].valid) {
+      fileclose(p->vmas[i].mfile);
+    }
+  }
 }
 
 // Create a user page table for a given process,
