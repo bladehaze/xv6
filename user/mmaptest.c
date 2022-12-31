@@ -36,6 +36,8 @@ err(char *why)
 void
 _v1(char *p)
 {
+
+  printf("running _v1.\n");
   int i;
   for (i = 0; i < PGSIZE*2; i++) {
     if (i < PGSIZE + (PGSIZE/2)) {

@@ -343,7 +343,8 @@ sfence_vma()
 #define PTE_W (1L << 2)
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4) // 1 -> user can access
-#define PTE_MMAP (1L << 9) // this is a mmap entry
+#define PTE_D (1L << 7) // if page has been written since last time this bit is cleared.
+#define PTE_MAP_SHARED (1L << 9) // for mmap entry, if this is shared or not.
 
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)

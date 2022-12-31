@@ -5,6 +5,9 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "file.h"
 
 /*
  * the kernel's page table.
@@ -194,12 +197,11 @@ int have_enough_space(pagetable_t pagetable, uint64 va, int sz) {
 // if va == 0, then an empty range in virtual address
 // space is allocated and returned.
 uint64
-mmap_allocate(pagetable_t pagetable, uint64 va, int sz) {
+mmap_allocate(pagetable_t pagetable, uint64 va, int sz, int is_shared) {
   uint64 a, last;
   uint64 result; 
   pte_t *pte;
   a = PGROUNDDOWN(va);
-  last = PGROUNDDOWN(va + sz - 1);
   for(;;) {
     a = find_next(pagetable, a, /*isempty=*/1);
     if (a == MAXVA) {
@@ -214,32 +216,50 @@ mmap_allocate(pagetable_t pagetable, uint64 va, int sz) {
   }
   // a now is a valid address.
   // we need to map
+  last = PGROUNDDOWN(a + sz - 1);
   result = a;
   for(;a <= last; a += PGSIZE) {
     pte = walk(pagetable, a, 1);
-    // *pte |= PTE_W | PTE_R | PTE_V | PTE_U;
-    // Cannot read-write till we map the file.
-    *pte |= PTE_V | PTE_U | PTE_MMAP;
+    // This gives and empty entry. Later when read/write/execute on this address will 
+    // trap, which we will read part of the file.
+    *pte |= PTE_U;
+    if (is_shared) {
+      *pte |= PTE_MAP_SHARED;
+    }
   }
-
   return result;
 }
 
-// Allocate a page for this va.
-int allocate_for_page_fault(pagetable_t pagetable, uint64 va, int perm)
+// Allocate a page, read file at offset for a page, and 
+// map to pagetable.
+int handle_mmap_page_fault(pagetable_t pagetable, struct file* file, uint64 va, int off, int perm)
 {
-  uint64 a;
+  uint64 a, pa;
   pte_t *pte;
   a = PGROUNDDOWN(va);
-  pte = walk(pagetable, va, 0);
+  pte = walk(pagetable, a, 0);
   if (pte == 0) {
     panic("Unallocated PTE.");
   }
-  // TODO Check if pte has appropriate flags, PTE_MMAP or PTE_COW
-  uint64 pa = (uint64)kalloc();
-  return mappages(pagetable, a, PGSIZE, pa, perm | PTE_FLAGS(*pte));
+  // We assumes that this is because we hasn't allocate physical memory yet.
+  pa = (uint64)kalloc();
+  memset((void*)pa, 0, PGSIZE);
+  ilock(file->ip);
+  int tot = readi(file->ip,/*user_dst=*/0, /*dst=*/pa, /*offset=*/off, PGSIZE);
+  iunlock(file->ip);
+  // This is necessary for mappage, looks like a hack to me, but I don't know 
+  // other ways.
+  *pte &= ~PTE_V;
+  // Copy existing flags (e.g. PTE_U)
+  int flags = PTE_FLAGS(*pte);
+  // map this as PTE_W so later we can write to it.
+  // perm is defined in fcntl.h, the bit shift translate it to PTEs.
+  // When unmmap, read the PTE_D to decide if we want to flush the content.
+  if(mappages(pagetable, a, PGSIZE, pa, perm | flags ) < 0) {
+    return -1;
+  }
+  return tot;
 }
-
 
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.

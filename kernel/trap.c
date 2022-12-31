@@ -168,7 +168,7 @@ clockintr()
   release(&tickslock);
 }
 
-int handle_page_fault(uint64 va) {
+int handle_page_fault(uint64 va, int scause) {
   // find the entry and see if it is PTE_MMAP
   // Find vma entry for this va
   struct proc* p = myproc();
@@ -179,13 +179,38 @@ int handle_page_fault(uint64 va) {
       vma_ptr = &p->vmas[i];
     }
   }
+  // TODO check here if this is a read trap or write trap, fail out if 
+  // violates.
+
+  // 12: Instruction (Execute)
+  // 13: Load(READ) page fault
+  // 15: Store(WRITE) page fault
+  if (scause == 12) {
+    if ((vma_ptr->prot & PTE_X) == 0) 
+      return 0;
+  }
+  if (scause == 13) {
+    if ((vma_ptr->prot & PTE_R) == 0) 
+      return 0;
+  }
+  if (scause == 15) {
+    if ((vma_ptr->prot & PTE_W) == 0) 
+      return 0;
+  }
+  // The accessed memory page might be some address in the middle of 
+  // mmaped region, we need to read all pages up to this address.
+  // We allocate all pages up to this page (i.e. [vma_ptr->address, va])
+  // This function will no op on area already allocated.
+
   // the prot << 1 bit translate PROTO to PTE
-  if(allocate_for_page_fault(p->pagetable, va, vma_ptr->prot << 1) == 0) {
-    // not successful for any reason.
+  int ret = handle_mmap_page_fault(p->pagetable, vma_ptr->mfile, va, PGROUNDDOWN(va) - vma_ptr->address, vma_ptr->prot);
+  // We then read va - vma_ptr->address, amount. we trust vma_ptr->mfile->offset
+  // is already mapped in the memory.
+  // int ret = fileread(vma_ptr->mfile, va, va - vma_ptr->address);
+  if(ret < 0) {
     return 0;
   }
-  // read file and and map to va.
-  return 0;
+  return ret;
 }
 
 // check if it's an external interrupt or software interrupt,
@@ -236,7 +261,7 @@ devintr()
   } else if (scause == 13 || scause == 15) {
     // allocate a physical memory and read file to it.
     uint64 va = r_stval();
-    return handle_page_fault(va);
+    return handle_page_fault(va, scause);
   } else {
     return 0;
   }

@@ -501,6 +501,7 @@ uint64 sys_mmap(void)
     return -1;
   if(argint(2, &prot) < 0)
     return -1;
+  // flags = MAP_SHARED or MAP_PRIVATE
   if(argint(3, &flags) < 0)
     return -1;
   if(argfd(4, 0, &fd) < 0)
@@ -532,14 +533,19 @@ uint64 sys_mmap(void)
 //   int proto;          // permission
 //   char valid;         // assigned or not
 // };
+// check file permission here.
+  if (!fd->writable && (prot & PROT_WRITE) != 0) {
+    return -1;
+  }
 
   fd = filedup(fd);
   vma_ptr->mfile = fd;
   vma_ptr->sz = length;
-  vma_ptr->prot = prot;
+  // left shit 1 would translate this to PTE flags.
+  vma_ptr->prot = prot << 1;
   vma_ptr->valid = 1;
   // now need to find virtual address.
-  vma_ptr->address = mmap_allocate(p->pagetable, addr, length);
+  vma_ptr->address = mmap_allocate(p->pagetable, addr, length, flags & MAP_SHARED);
   
   return vma_ptr->address;
 }
