@@ -86,6 +86,7 @@ struct vma {
   struct file *mfile; // mapped file
   uint64 address;     // virtual address
   uint64 sz;          // size of the vma
+  uint64 offset;      // This is useful when unmmap.
   int prot;           // permission
   char valid;         // assigned or not
 };

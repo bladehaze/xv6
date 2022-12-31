@@ -203,7 +203,7 @@ int handle_page_fault(uint64 va, int scause) {
   // This function will no op on area already allocated.
 
   // the prot << 1 bit translate PROTO to PTE
-  int ret = handle_mmap_page_fault(p->pagetable, vma_ptr->mfile, va, PGROUNDDOWN(va) - vma_ptr->address, vma_ptr->prot);
+  int ret = handle_mmap_page_fault(p->pagetable, vma_ptr->mfile, va, vma_ptr->offset + PGROUNDDOWN(va) - vma_ptr->address, vma_ptr->prot);
   // We then read va - vma_ptr->address, amount. we trust vma_ptr->mfile->offset
   // is already mapped in the memory.
   // int ret = fileread(vma_ptr->mfile, va, va - vma_ptr->address);

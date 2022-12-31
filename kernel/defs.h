@@ -171,6 +171,7 @@ int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 uint64          mmap_allocate(pagetable_t pagetable, uint64 va, int sz, int is_shared);
+uint64 mmap_unallocate(pagetable_t pagetable, struct file* file, uint64 va, int va_file_offset, int sz);
 int handle_mmap_page_fault(pagetable_t pagetable, struct file* file, uint64 va, int off, int perm);
 
 // plic.c

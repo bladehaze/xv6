@@ -545,11 +545,14 @@ uint64 sys_mmap(void)
   // left shit 1 would translate this to PTE flags.
   vma_ptr->prot = prot << 1;
   vma_ptr->valid = 1;
+  vma_ptr->offset = 0;
   // now need to find virtual address.
   vma_ptr->address = mmap_allocate(p->pagetable, addr, length, flags & MAP_SHARED);
   
   return vma_ptr->address;
 }
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
+#define MIN(a, b) (((a) > (b)) ? (b) : (a))
 
 uint64 sys_munmap(void)
 {
@@ -561,7 +564,45 @@ uint64 sys_munmap(void)
   if(argint(1, &length) < 0)
     return -1;
 
+  struct proc *p = myproc();
+  struct vma *vma_ptr = 0;
+  
+  for(int i = 0; i < NUM_VMAS; ++i) {
+    if(!p->vmas[i].valid) {
+      continue;
+    }
+    if (p->vmas[i].address <= addr && addr < p->vmas[i].sz + p->vmas[i].address) {
+      vma_ptr = &p->vmas[i];
+      break;
+    }
+  }
+  if(vma_ptr == 0) {
+    // not found, return 
+    return -1;
+  }
+  uint64 tempaddr = MAX(addr, vma_ptr->address);
+  length = MIN(addr + length, vma_ptr->address + vma_ptr->sz) - tempaddr;
+  addr = tempaddr;
 
+// uint64
+// mmap_unallocate(pagetable_t pagetable, struct file* file, uint64 va, int va_file_offset, int sz)
+  // Total unallocated size.
+  int sz = mmap_unallocate(p->pagetable, vma_ptr->mfile, addr, vma_ptr->offset + (addr - vma_ptr->address), length);
+  if (addr == vma_ptr->address) {
+    // At the front of the region.
+    vma_ptr->address += sz;
+    vma_ptr->offset += sz;
+    vma_ptr->sz -= sz;
+  } else if (addr + length == vma_ptr->address + vma_ptr->sz) {
+    // At the end of the region.
+    vma_ptr->sz -= sz;
+  } else {
+    panic("Not supported to ummap middle of the region.");
+  }
+  if (vma_ptr->sz == 0) {
+    vma_ptr->valid = 0;
+    fileclose(vma_ptr->mfile);
+  }
 
-  return 0;
+  return sz;
 }

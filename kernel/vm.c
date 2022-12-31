@@ -168,10 +168,10 @@ uint16 find_next(pagetable_t pagetable, uint64 va, int is_empty) {
   a = PGROUNDDOWN(va);
   for(;a < MAXVA; a += PGSIZE) {
     pte = walk(pagetable, a, 1);
-    if (is_empty && !(*pte & PTE_V)) {
+    if (is_empty && (*pte & PTE_V) == 0) {
       return a;
     }
-    if (!is_empty && (*pte & PTE_V)) {
+    if (!is_empty && (*pte & PTE_V) != 0) {
       return a;
     }
   }
@@ -193,13 +193,58 @@ int have_enough_space(pagetable_t pagetable, uint64 va, int sz) {
   return 1;
 }
 
+
+// uint64
+// mmap_unallocate(pagetable_t pagetable, struct file* file, uint64 va, int va_file_offset, int sz)
+
+// unmap the region and return total unmmapped size.
+uint64
+mmap_unallocate(pagetable_t pagetable, struct file* file, uint64 va, int va_file_offset, int sz)
+{
+  // Find all entries, unallocate those first and uvmunmap all (with do_free=false)
+  if (PGROUNDDOWN(va) != va) panic("unmmap: address need to be page aligned.");
+  // This is so that we keep the half pages. (necessary??)
+  sz = PGROUNDDOWN(sz);
+  int tot = 0;
+
+  begin_op();
+  for(uint64 to = va; to < va + sz; to += PGSIZE) {
+    pte_t *pte = walk(pagetable, to, 0);
+    if ((*pte & PTE_V) == 0) {
+      panic("not supposed to happen");
+    }
+    if ((*pte & (PTE_R | PTE_X | PTE_W)) == 0) {
+      // ignore, will unallocate later
+      continue;
+    }
+    // If this is dirty and shared, we need to write back.
+    if ((*pte & PTE_D) > 0 && (*pte & PTE_MAP_SHARED) > 0) {
+      // lock
+      ilock(file->ip);
+      // write back with address for a page
+      int written = writei(file->ip, 1, to, va_file_offset + (to - va), PGSIZE);
+      // unlock
+      iunlock(file->ip);
+      if (written > 0) {
+        tot += written;
+      }
+    }
+    // Release the physical and unmmap all.
+    uint64 pa = PTE2PA(*pte);
+    kfree((void*)pa);
+  }
+  end_op();
+
+  // unmmap from pagetable.
+  uvmunmap(pagetable, va, sz/PGSIZE, 0);
+  return sz;
+}
 // create pte entries cover a range of [va, va+sz]
 // if va == 0, then an empty range in virtual address
 // space is allocated and returned.
 uint64
 mmap_allocate(pagetable_t pagetable, uint64 va, int sz, int is_shared) {
-  uint64 a, last;
-  uint64 result; 
+  uint64 a, result, last;
   pte_t *pte;
   a = PGROUNDDOWN(va);
   for(;;) {
@@ -214,7 +259,7 @@ mmap_allocate(pagetable_t pagetable, uint64 va, int sz, int is_shared) {
       a = find_next(pagetable, a, /*isempty=*/0);
     }
   }
-  // a now is a valid address.
+  // [a, sz) now is a valid range
   // we need to map
   last = PGROUNDDOWN(a + sz - 1);
   result = a;
@@ -222,11 +267,13 @@ mmap_allocate(pagetable_t pagetable, uint64 va, int sz, int is_shared) {
     pte = walk(pagetable, a, 1);
     // This gives and empty entry. Later when read/write/execute on this address will 
     // trap, which we will read part of the file.
-    *pte |= PTE_U;
+    // The pte entry might not be valid.
+    *pte |= PTE_U | PTE_V;
     if (is_shared) {
       *pte |= PTE_MAP_SHARED;
     }
   }
+  // Return virtual address 
   return result;
 }
 
