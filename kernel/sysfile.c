@@ -535,7 +535,8 @@ uint64 sys_mmap(void)
 // };
 // check file permission here.
   if (!fd->writable && (prot & PROT_WRITE) != 0) {
-    return -1;
+    if (((flags & MAP_SHARED) != 0) && ((prot & PROT_WRITE) != 0))
+     return -1;
   }
 
   fd = filedup(fd);
