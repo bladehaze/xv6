@@ -312,6 +312,16 @@ fork(void)
 
   pid = np->pid;
 
+  // copy vmas
+
+  for(int i = 0; i < NUM_VMAS; ++i) {
+    if (!p->vmas[i].valid) {
+      continue;
+    }
+    np->vmas[i] = p->vmas[i];
+    filedup(np->vmas[i].mfile);
+  }
+
   release(&np->lock);
 
   acquire(&wait_lock);
@@ -358,6 +368,14 @@ exit(int status)
       fileclose(f);
       p->ofile[fd] = 0;
     }
+  }
+  for(int i = 0; i < NUM_VMAS; ++i) {
+    if (!p->vmas[i].valid) {
+      continue;
+    }
+    mmap_unallocate(p->pagetable, p->vmas[i].mfile, p->vmas[i].address, p->vmas[i].offset, p->vmas[i].sz);
+    fileclose(p->vmas[i].mfile);
+    p->vmas[i].valid = 0;
   }
 
   begin_op();

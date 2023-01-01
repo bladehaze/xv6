@@ -205,16 +205,14 @@ mmap_unallocate(pagetable_t pagetable, struct file* file, uint64 va, int va_file
   if (PGROUNDDOWN(va) != va) panic("unmmap: address need to be page aligned.");
   // This is so that we keep the half pages. (necessary??)
   sz = PGROUNDDOWN(sz);
-  int tot = 0;
-
   begin_op();
   for(uint64 to = va; to < va + sz; to += PGSIZE) {
     pte_t *pte = walk(pagetable, to, 0);
     if ((*pte & PTE_V) == 0) {
       panic("not supposed to happen");
     }
-    if ((*pte & (PTE_R | PTE_X | PTE_W)) == 0) {
-      // ignore, will unallocate later
+    if ((*pte & PTE_MAP_NOT_ALLOCATED) != 0) {
+      // not allocated, skip
       continue;
     }
     // If this is dirty and shared, we need to write back.
@@ -222,21 +220,16 @@ mmap_unallocate(pagetable_t pagetable, struct file* file, uint64 va, int va_file
       // lock
       ilock(file->ip);
       // write back with address for a page
-      int written = writei(file->ip, 1, to, va_file_offset + (to - va), PGSIZE);
+      writei(file->ip, 1, to, va_file_offset + (to - va), PGSIZE);
       // unlock
       iunlock(file->ip);
-      if (written > 0) {
-        tot += written;
-      }
     }
     // Release the physical and unmmap all.
-    uint64 pa = PTE2PA(*pte);
-    kfree((void*)pa);
+    // DO NOT free!!
+    // uint64 pa = PTE2PA(*pte);
+    // kfree((void*)pa);
   }
   end_op();
-
-  // unmmap from pagetable.
-  uvmunmap(pagetable, va, sz/PGSIZE, 0);
   return sz;
 }
 // create pte entries cover a range of [va, va+sz]
@@ -248,6 +241,8 @@ mmap_allocate(pagetable_t pagetable, uint64 va, int sz, int is_shared) {
   pte_t *pte;
   a = PGROUNDDOWN(va);
   for(;;) {
+    // This consider the virtual memory space can be fragmented.
+    // i.e. has holes, which is not real (growproc assumes continues vm space for example.)
     a = find_next(pagetable, a, /*isempty=*/1);
     if (a == MAXVA) {
       panic("Can not find empty space.");
@@ -268,7 +263,7 @@ mmap_allocate(pagetable_t pagetable, uint64 va, int sz, int is_shared) {
     // This gives and empty entry. Later when read/write/execute on this address will 
     // trap, which we will read part of the file.
     // The pte entry might not be valid.
-    *pte |= PTE_U | PTE_V;
+    *pte |= PTE_U | PTE_V | PTE_MAP_NOT_ALLOCATED;
     if (is_shared) {
       *pte |= PTE_MAP_SHARED;
     }
@@ -298,11 +293,12 @@ int handle_mmap_page_fault(pagetable_t pagetable, struct file* file, uint64 va, 
   // other ways.
   *pte &= ~PTE_V;
   // Copy existing flags (e.g. PTE_U)
-  int flags = PTE_FLAGS(*pte);
+  // also mark this page as allocated. 
+  int flags = PTE_FLAGS(*pte) & (~PTE_MAP_NOT_ALLOCATED);
   // map this as PTE_W so later we can write to it.
   // perm is defined in fcntl.h, the bit shift translate it to PTEs.
   // When unmmap, read the PTE_D to decide if we want to flush the content.
-  if(mappages(pagetable, a, PGSIZE, pa, perm | flags ) < 0) {
+  if(mappages(pagetable, a, PGSIZE, pa, (perm &(PTE_R|PTE_W|PTE_X)) | flags ) < 0) {
     return -1;
   }
   return tot;
@@ -323,13 +319,17 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
+    if((*pte & PTE_V) == 0) {
       panic("uvmunmap: not mapped");
+    }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
       uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      if ((*pte & PTE_MAP_NOT_ALLOCATED) == 0) {
+        // not allocated, continue.
+        kfree((void*)pa);
+      }
     }
     *pte = 0;
   }
@@ -418,7 +418,7 @@ freewalk(pagetable_t pagetable)
   // there are 2^9 = 512 PTEs in a page table.
   for(int i = 0; i < 512; i++){
     pte_t pte = pagetable[i];
-    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X|PTE_MAP_NOT_ALLOCATED|PTE_MAP_SHARED)) == 0){
       // this PTE points to a lower-level page table.
       uint64 child = PTE2PA(pte);
       freewalk((pagetable_t)child);
@@ -449,7 +449,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
-  pte_t *pte;
+  pte_t *pte, *npte;
   uint64 pa, i;
   uint flags;
   char *mem;
@@ -459,6 +459,19 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
+    // Here mmapped page is also valid but doesn't
+    // have a physical memory, the following copying of physical momories
+    // should be skiped.
+    // How to identify this entry is MMaped entry then?
+    if ((*pte & PTE_MAP_NOT_ALLOCATED) != 0) {
+      // skip physical copy rather clear entry's R/W/X bits.
+      // so that the page fault will handle this.
+      if ((npte = walk(new, i, 1)) == 0)
+         goto err;
+      // *npte should == 0
+      *npte |= PTE_FLAGS(*pte);
+      continue;
+    }
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)

@@ -344,7 +344,13 @@ sfence_vma()
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4) // 1 -> user can access
 #define PTE_D (1L << 7) // if page has been written since last time this bit is cleared.
-#define PTE_MAP_SHARED (1L << 9) // for mmap entry, if this is shared or not.
+#define PTE_MAP_SHARED (1L << 8) // for shared mmap entry, if this is shared or not.
+// indicate mmapped but not allocated. we don't punch holes in virtual memory
+// We don't punch holes in virtual memory space, because growproc function
+// assumes continues memory space, so once mmaped, unmmaped mearly unmmap the 
+// file but not free the physcial memory.
+// We use NOT_* because by default memory in pagetable should has physical memory.
+#define PTE_MAP_NOT_ALLOCATED (1L << 9) 
 
 // shift a physical address to the right place for a PTE.
 #define PA2PTE(pa) ((((uint64)pa) >> 12) << 10)

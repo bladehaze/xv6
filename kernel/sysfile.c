@@ -548,6 +548,10 @@ uint64 sys_mmap(void)
   vma_ptr->offset = 0;
   // now need to find virtual address.
   vma_ptr->address = mmap_allocate(p->pagetable, addr, length, flags & MAP_SHARED);
+  // update proc size.
+  if(p->sz < vma_ptr->address + vma_ptr->sz) {
+    p->sz = vma_ptr->address + vma_ptr->sz;
+  }
   
   return vma_ptr->address;
 }
@@ -571,7 +575,16 @@ uint64 sys_munmap(void)
     if(!p->vmas[i].valid) {
       continue;
     }
+    // find vmas with [vmas.address, vmas.address + vmas.sz) overlaps with
+    // [addresss, address + length)
+    // assuming there can only be one..
     if (p->vmas[i].address <= addr && addr < p->vmas[i].sz + p->vmas[i].address) {
+      vma_ptr = &p->vmas[i];
+      break;
+    }
+
+    // This to handl addr < start, but addr + length is in range.
+    if (p->vmas[i].address < addr + length && addr + length <= p->vmas[i].sz + p->vmas[i].address) {
       vma_ptr = &p->vmas[i];
       break;
     }
@@ -588,6 +601,9 @@ uint64 sys_munmap(void)
 // mmap_unallocate(pagetable_t pagetable, struct file* file, uint64 va, int va_file_offset, int sz)
   // Total unallocated size.
   int sz = mmap_unallocate(p->pagetable, vma_ptr->mfile, addr, vma_ptr->offset + (addr - vma_ptr->address), length);
+
+  // unmmap from pagetable. we will call above function in proc.c:exit function also, which 
+  // uvmunmap shouldn't be called.
   if (addr == vma_ptr->address) {
     // At the front of the region.
     vma_ptr->address += sz;
@@ -600,6 +616,7 @@ uint64 sys_munmap(void)
     panic("Not supported to ummap middle of the region.");
   }
   if (vma_ptr->sz == 0) {
+    // uvmunmap(p->pagetable, addr, PGROUNDDOWN(sz)/PGSIZE, 0);
     vma_ptr->valid = 0;
     fileclose(vma_ptr->mfile);
   }
