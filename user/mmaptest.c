@@ -36,8 +36,6 @@ err(char *why)
 void
 _v1(char *p)
 {
-
-  printf("running _v1.\n");
   int i;
   for (i = 0; i < PGSIZE*2; i++) {
     if (i < PGSIZE + (PGSIZE/2)) {
@@ -279,7 +277,6 @@ fork_test(void)
   if (pid == 0) {
     _v1(p1);
     munmap(p1, PGSIZE); // just the first page
-    printf("exiting child thread\n");
     exit(0); // tell the parent that the mapping looks OK.
   }
 

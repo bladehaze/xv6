@@ -319,15 +319,14 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0) {
+    if((*pte & PTE_V) == 0)
       panic("uvmunmap: not mapped");
-    }
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
       uint64 pa = PTE2PA(*pte);
       if ((*pte & PTE_MAP_NOT_ALLOCATED) == 0) {
-        // not allocated, continue.
+        // allocated, free
         kfree((void*)pa);
       }
     }
