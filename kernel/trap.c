@@ -179,6 +179,10 @@ int handle_page_fault(uint64 va, int scause) {
       vma_ptr = &p->vmas[i];
     }
   }
+  if (vma_ptr == 0) {
+    return 0;
+  }
+
   // TODO check here if this is a read trap or write trap, fail out if 
   // violates.
 

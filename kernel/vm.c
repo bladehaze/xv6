@@ -283,6 +283,10 @@ int handle_mmap_page_fault(pagetable_t pagetable, struct file* file, uint64 va, 
   if (pte == 0) {
     panic("Unallocated PTE.");
   }
+  if ((*pte & PTE_U) == 0) {
+    // This needs to be user for mmap
+    return 0;
+  }
   // We assumes that this is because we hasn't allocate physical memory yet.
   pa = (uint64)kalloc();
   memset((void*)pa, 0, PGSIZE);
